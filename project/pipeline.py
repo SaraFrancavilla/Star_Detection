@@ -10,110 +10,79 @@ import utils
 
 ################ GLOBAL PARAMETERS ###############
 
-image_path = "./subdataset" # Path to the image dataset
+image_path = "./dataset" # Path to the image dataset
 output_path = "./output"
-blur_thresh = 50    # Threshold for blur estimation TEST
+os.makedirs(output_path, exist_ok=True)
+coordinates_file = os.path.join(output_path, "coordinates.csv")
+centroids_file = os.path.join(output_path, "centroids.csv")
+
+blur_thresh = 200    # Threshold for blur estimation TEST
 noise_thresh = 10   # Threshold for noise estimation TEST
-blur_motion_thresh = 20  # Threshold for motion blur estimation TEST
+blur_motion_thresh = 4  # Threshold for motion blur estimation TEST
 
 WINDOW = 3
-HALF = WINDOW // 2
-T = 0
-percent = 0.05  # percentuale per thresholding nella centroid calculation
+LARGE = 5
+percent = 0.9 # percentuale per thresholding nella centroid calculation
 
 #################################################
 
+# Download and load images
+url = "https://drive.google.com/uc?id=1Tz7Vd1RLngNaPPKpzqTFgjSbUREstFHI"
+files = utils.download_and_load_images(url)
 
 files = [f for f in os.listdir(image_path) if f.lower().endswith(('.png'))]
 files.sort()
-for i, file in enumerate(files):
-    img = cv2.imread(os.path.join(image_path, file))
 
-    if img is None:
-        raise FileNotFoundError(f"Image not found or failed to load: {image_path}")
+with open(coordinates_file, "w") as f_coords, open(centroids_file, "w") as f_cents:
 
-    # read image in RGB and grayscale
-    rgb_img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    for i, file in enumerate(files):
+        img = cv2.imread(os.path.join(image_path, file))
+        if img is None:
+            raise FileNotFoundError(f"Image not found or failed to load: {image_path}")
 
-    # image dimensions
-    H, W = gray_img.shape
-    threshold = np.percentile(img, 80)
-
-
-    #################### IMAGE PREPROCESSING ####################
-
-    if utils.estimate_blur(gray_img) < blur_thresh:
-        print(f"{file} has athmosphereic blur")
+        gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
         threshold = np.percentile(img, 90)
-        percent = 0.05
 
-    if utils.estimate_noise(gray_img) > noise_thresh:
-        continue
-        print(f"{file} has noise")
 
-    elif utils.estimate_motion_blur(gray_img) > blur_motion_thresh:     #modify when function noise is ready
-        continue
-        print(f"{file} has motion blur")
+        #################### IMAGE PREPROCESSING ####################
         
-    
-   
-   ############################ STAR DETECTION ####################
+        if utils.estimate_noise(gray_img) > noise_thresh:
+            denoised_img = utils.denoise_image(gray_img)
+            if utils.estimate_blur(denoised_img) < blur_motion_thresh:
+                eccentricity_map = utils.eccentric_map(denoised_img)
+                ecc_nonzero = eccentricity_map[eccentricity_map > 0]
+                hist_counts, hist_bins = np.histogram(ecc_nonzero, bins=100)
+                peak_bin_idx = np.argmax(hist_counts)
+                ecc_mode = (hist_bins[peak_bin_idx] + hist_bins[peak_bin_idx + 1]) / 2
+                coordinates = utils.detect_stars_multiscale_adaptive(denoised_img, adapt_eccentricity=True, ecc_threshold=ecc_mode, 
+                                                    th_std=ecc_mode/2)
+            else:
+                coordinates = utils.detect_stars_multiscale(denoised_img)
+                
+        else:
+            if utils.estimate_blur(gray_img) < blur_thresh:
+                coordinates = peak_local_max(gray_img, min_distance=8, threshold_abs=np.percentile(gray_img, 80))
+                coordinates = np.array([(c[1], c[0]) for c in coordinates])  
+            else:
+                eccentricity_map = utils.eccentric_map(denoised_img)
+                ecc_nonzero = eccentricity_map[eccentricity_map > 0]
+                hist_counts, hist_bins = np.histogram(ecc_nonzero, bins=100)
+                peak_bin_idx = np.argmax(hist_counts)
+                ecc_mode = (hist_bins[peak_bin_idx] + hist_bins[peak_bin_idx + 1]) / 2
+                coordinates = utils.detect_stars_multiscale_adaptive(denoised_img, adapt_eccentricity=True, ecc_threshold=ecc_mode, 
+                                                th_std=ecc_mode/2)
+                print(f"Image {i} processed on {len(files)}")
 
-    coordinates = peak_local_max(gray_img, min_distance=5, threshold_abs=threshold)
-    print(f"Rilevati {len(coordinates)} picchi nell'immagine {file}")
-    #print(coordinates)
-
-
-    ###################### CENTROID CALCULATION ####################
-
-    centroid = []
-    for coord in coordinates:
-        y, x = float(coord[0]), float(coord[1])
-        #small local neighborhood around each detected star is selected for centroid refinement
-        x1 = max(0, x - HALF)
-        x2 = min(W, x + HALF + 1)
-        y1 = max(0, y - HALF)
-        y2 = min(H, y + HALF + 1)
-
-        patch = cv2.getRectSubPix(gray_img.astype(np.float32), (WINDOW, WINDOW), (x, y))
-        #patch = patch - patch.min()
-        #patch = patch / (patch.max() + 1e-8)
-
-        T = patch.min() + percent * (patch.max() - patch.min())
-        patch_comp = utils.energy_compensation(patch)
-        c = utils.threshold_centroid(patch_comp, x1-HALF, y1-HALF, T=T)
-        if c is not None:
-            centroid.append(c)
-
-    print(f"Image {file}: {len(centroid)} centroidi")
-
-    if len(centroid) == 0:
-        continue  # salta immagini senza centroidi
-
-    centroids_np = np.array(centroid)
-
-    filename = f"centroids_image_{file}.csv"
-    filepath = os.path.join(output_path, filename)
-
-    np.savetxt(
-        filepath,
-        centroids_np,
-        delimiter=",",
-        fmt="%.3f"
-    )
+        img_name = os.path.splitext(file)[0]
+        line_coords = [img_name]
+        line_coords += [f"{int(x)},{int(y)}" for x, y in coordinates]
+        f_coords.write(" ".join(line_coords) + "\n")
 
 
-    ################# ERRORS ########################
-    filename = "centroid_" + os.path.splitext(file)[0] + ".csv"
-    filepath = os.path.join("./dataset/centroid/", filename)
+        ###################### CENTROID CALCULATION ####################
 
-    gt_coords = utils.load_ground_truth(filepath)
-    #print(gt_coords)
-    #print (list(centroid))
+        centroids_np = utils.refined_centroids(gray_img, coordinates, WINDOW=WINDOW, LARGE = LARGE)
 
-    matches, n_matched, match_ratio = utils.match_centroids(gt_coords, centroid, threshold=5.0)
-
-    print(f"Numero di corrispondenze: {n_matched}/{len(gt_coords)}")
-    print(f"Percentuale di matching: {match_ratio:.2f}%")
-
+        line_cents = [img_name]
+        line_cents += [f"{x:.3f},{y:.3f}" for x, y in centroids_np]
+        f_cents.write(" ".join(line_cents) + "\n") 

@@ -681,6 +681,7 @@ def refined_centroids(gray_img, coordinates, WINDOW=3, LARGE=5, percent=0.2):
 def read_custom_csv(csv_path, suffix_char=None):
     data_dict = {}
     if not os.path.exists(csv_path):
+        print(f"File {csv_path} does not exist.")
         return data_dict
     with open(csv_path, "r") as f:
         lines = f.readlines()
@@ -702,4 +703,5 @@ def read_custom_csv(csv_path, suffix_char=None):
             x_str, y_str = pair.split(",")
             coords.append((float(x_str), float(y_str)))
         data_dict[img_name] = np.array(coords)
+
     return data_dict

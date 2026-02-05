@@ -9,6 +9,30 @@ from scipy.stats import norm
 from scipy.spatial.distance import cdist
 
 
+########################################
+#   READING FILE
+########################################
+
+def load_ground_truth(csv_file):
+    """
+    Reads a CSV in the "Lost" format (containing only `x` and `y` columns) and returns a list of `(x, y)` coordinates.
+    :param csv_file: Path to the CSV file.
+    """
+    coords = []
+    with open(csv_file, "r") as f:
+        for line in f:
+            if line.startswith("num_input_centroids"):
+                continue
+            parts = line.split()
+            key = parts[0]
+            value = float(parts[1])
+            if "_x" in key or "_y" in key:
+                coords.append(value)
+
+    xy_coords = [(coords[i], coords[i+1]) for i in range(0, len(coords), 2)]
+    return xy_coords
+
+
 def download_and_load_images(url, extract_dir=".", image_folder="dataset",
                              extensions=(".png", ".jpg", ".jpeg")):
     """
@@ -40,6 +64,41 @@ def download_and_load_images(url, extract_dir=".", image_folder="dataset",
     print(f"{len(files)} images loaded.")
     return files
 
+# Funzione per leggere il CSV nel formato AAA0 x1,y1 x2,y2 ... con filtro
+def read_custom_csv(csv_path, suffix_char=None):
+    data_dict = {}
+    if not os.path.exists(csv_path):
+        print(f"File {csv_path} does not exist.")
+        return data_dict
+    with open(csv_path, "r") as f:
+        lines = f.readlines()
+
+    for line in lines:
+        line = line.strip()
+        if not line:
+            continue
+
+        parts = line.split()
+        img_name = parts[0]
+
+        # Filter
+        if suffix_char is not None and not img_name.endswith(str(suffix_char)):
+            continue
+
+        coords = []
+        for pair in parts[1:]:
+            x_str, y_str = pair.split(",")
+            coords.append((float(x_str), float(y_str)))
+        data_dict[img_name] = np.array(coords)
+
+    return data_dict
+
+
+
+########################################
+#   IMAGE QUALITY ESTIMATION FUNCTIONS
+########################################
+
 def estimate_blur(img_gray):
     """
     Estimate the blur level of a grayscale image using the variance of the Laplacian.
@@ -58,7 +117,7 @@ def estimate_motion_blur(img_gray):
     
     grad_mag = np.sqrt(gx**2 + gy**2)
     
-    # gradient mean → più bassa indica blur da movimento
+    # gradient mean
     blur_measure = np.mean(grad_mag)
     return blur_measure
 
@@ -70,54 +129,10 @@ def estimate_noise(img_gray):
     noise_std = np.std(patch)
     return noise_std
 
-def load_ground_truth(csv_file):
-    """
-    Legge un CSV in formato Lost (solo x e y) e restituisce una lista di coordinate (x, y)
-    """
-    coords = []
-    with open(csv_file, "r") as f:
-        for line in f:
-            if line.startswith("num_input_centroids"):
-                continue
-            parts = line.split()
-            key = parts[0]
-            value = float(parts[1])
-            if "_x" in key or "_y" in key:
-                coords.append(value)
 
-    xy_coords = [(coords[i], coords[i+1]) for i in range(0, len(coords), 2)]
-    return xy_coords
-
-def match_centroids(ground_truth, detected, threshold=30.0):
-    """
-    Confronta i centroidi calcolati con quelli di ground truth.
-
-    Args:
-        ground_truth: lista di tuple (x, y)
-        detected: lista di tuple (x, y) calcolati dal tuo algoritmo
-        threshold: distanza massima (in pixel) per considerare una corrispondenza
-
-    Returns:
-        matches: lista di tuple ((x_calcolato, y_calcolato), (x_gt, y_gt))
-        n_matched: numero di centroidi correttamente abbinati
-        match_ratio: percentuale di centroidi corretti rispetto al totale di ground truth
-    """
-    ground_truth = np.array(ground_truth, dtype=float)
-    detected = np.array(detected, dtype=float)
-
-    matches = []
-    for c in detected:
-        # distanza da tutti i punti di ground truth
-        distances = np.linalg.norm(ground_truth - c, axis=1)
-        min_idx = np.argmin(distances)
-        if distances[min_idx] <= threshold:
-            matches.append((tuple(c), tuple(ground_truth[min_idx])))
-
-    n_matched = len(matches)
-    match_ratio = n_matched / len(ground_truth) * 100 if len(ground_truth) > 0 else 0.0
-
-    return matches, n_matched, match_ratio
-
+########################################
+#  STAR DETECTION FUNCTIONS
+########################################
 
 def align_image(img):
     img_safe = img[img >= 10] #safe_lower
@@ -151,13 +166,7 @@ def denoise_image(img, wave='db2', level=3, k=3):
     return np.clip(denoised, 0, 255).astype(np.uint8)
 
 
-"""
-Rilevamento stelle multi-scala ADATTIVO per stelle allungate.
-Rileva l'eccentricità locale e adatta le finestre per stelle allungate.
-    adapt_eccentricity: se True, adatta finestre per stelle allungate (img6, img7)
-    ecc_threshold: soglia di eccentricità (default 0.4). Aumenta per più conservativo (0.5-0.6), diminuisci per più stelle (0.3)
-    scale_eccentricity_factor: moltiplicatore (default 0.5). Aumenta a 1.0 o 1.5 per finestre più grandi
-"""
+
 def detect_stars_multiscale_adaptive(img, 
                                      A_sizes=[3,5,7], 
                                      B_sizes=[7,11,15],
@@ -165,6 +174,15 @@ def detect_stars_multiscale_adaptive(img,
                                      adapt_eccentricity=True,
                                      ecc_threshold=0.4,
                                      scale_eccentricity_factor=0.5):
+    
+    """
+    Adaptive multi-scale star detection for elongated stars.
+    Detects local eccentricity and adjusts windows for elongated stars.
+
+        adapt_eccentricity: if True, adjusts detection windows for elongated stars (img6, img7)
+        ecc_threshold: eccentricity threshold (default 0.4). Increase for more conservative detection (0.5-0.6), decrease to detect more stars (0.3)
+        scale_eccentricity_factor: multiplier (default 0.5). Increase to 1.0 or 1.5 for larger detection windows
+    """
 
     stars = []
     H, W = img.shape
@@ -386,7 +404,9 @@ def eccentric_map(debug_img):
 
 
 
-############# LOST FILE HANDLING FUNCTIONS #############
+##########################################
+# LOST FILE HANDLING FUNCTIONS
+##########################################
 
 def basic_threshold(image):
 
@@ -406,7 +426,7 @@ def iwcog_helper(image, start_idx, cutoff, checked_indices, image_width, image_h
     guess = start_idx
     is_valid = True
     
-    # Stack per evitare ricorsione profonda (problema in Python)
+    # Stack per evitare ricorsione profonda
     stack = [start_idx]
     
     while stack:
@@ -550,47 +570,24 @@ def iterative_weighted_cog(image, min_change=0.0002, max_iterations=100000):
     return result
 
 
-def match_with_ground_truth(detected_array, gt_array, max_distance=3):
-    """
-    Conta quante stelle rilevate matchano con il ground truth
-    """
-    if len(detected_array) == 0 or len(gt_array) == 0:
-        return 0, 0, 0
-    
-    # Calcola distanze
-    distances = cdist(detected_array, gt_array)
-    
-    # Conta matches (stella rilevata entro max_distance da una stella vera)
-    matches = 0
-    matched_gt = set()
-    
-    for i in range(len(detected_array)):
-        min_dist_idx = np.argmin(distances[i])
-        if distances[i, min_dist_idx] <= max_distance:
-            matches += 1
-            matched_gt.add(min_dist_idx)
-    
-    true_positives = matches
-    false_positives = len(detected_array) - matches
-    false_negatives = len(gt_array) - len(matched_gt)
-    
-    return true_positives, false_positives, false_negatives
-
+#########################################
+# CENTROIDING FUNCTIONS
+#########################################
 
 def energy_compensation_robust(patch):
     """
-    Compensazione della finestra secondo principio del paper.
-    Migliora la distribuzione dell'energia per centroiding.
+    Window compensation according to the method described in the paper.
+    Improves energy distribution for centroiding.
     """
+
     flat = patch.flatten()
-    idx = np.argsort(flat)  # indici per ordinare
+    idx = np.argsort(flat)
 
     G = flat[idx]
     G_var = np.var(G)
-
     n = len(G)
-    # compensazione: pixel bassi aumentano, pixel alti diminuiscono
-    num_extremes = max(1, n // 4)  # circa 25% estremi, regolabile
+    
+    num_extremes = max(1, n // 4) 
     G[:num_extremes] += G_var
     G[-num_extremes:] -= G_var
 
@@ -600,7 +597,7 @@ def energy_compensation_robust(patch):
 
 def threshold_centroid_2(patch, x1, y1, T=0):
     """
-    Calcolo centroide pesato usando threshold.
+    Weighted centroid calculation using a threshold.
     """
     h, w = patch.shape
     yy, xx = np.mgrid[0:h, 0:w]
@@ -614,13 +611,13 @@ def threshold_centroid_2(patch, x1, y1, T=0):
 
 def extract_around(img, x, y, size):
     """
-    Estrae patch quadrato centrato su (x,y) di dimensione size x size.
+    Extracts a square patch centered at (x, y) with dimensions size x size.
     """
     return cv2.getRectSubPix(img.astype(np.float32), (size, size), (x, y))
 
 def refined_centroids(gray_img, coordinates, WINDOW=3, LARGE=5, percent=0.2):
     """
-    Ciclo principale di estrazione centroidi con compensazione robusta.
+    Main loop for centroid extraction with robust compensation.
     """
     H, W = gray_img.shape
     HALF = WINDOW // 2
@@ -630,22 +627,18 @@ def refined_centroids(gray_img, coordinates, WINDOW=3, LARGE=5, percent=0.2):
     for coord in coordinates:
         x, y = float(coord[0]), float(coord[1])
 
-        # patch grande per compensazione
         patchL = extract_around(gray_img, x, y, LARGE)
         patchL -= patchL.min()
         patchL /= patchL.max() + 1e-8
 
         patch_comp = energy_compensation_robust(patchL)
 
-        # threshold locale basato su percentuale
         T = patch_comp.min() + percent * (patch_comp.max() - patch_comp.min())
 
-        # calcolo centroide pesato sulla patch compensata
         c_large = threshold_centroid_2(patch_comp, x - HALF_L, y - HALF_L, T=T)
         if c_large is None:
             continue
 
-        # optional: raffinamento locale su patch piccola
         patchS = extract_around(gray_img, c_large[0], c_large[1], WINDOW)
         patchS -= patchS.min()
         patchS /= patchS.max() + 1e-8
@@ -656,7 +649,6 @@ def refined_centroids(gray_img, coordinates, WINDOW=3, LARGE=5, percent=0.2):
         else:
             centroids.append(c_small)
 
-    # ---- fusione doppioni vicini (distanza < 1.5 pixel) ----
     final = []
     used = set()
     for i in range(len(centroids)):
@@ -677,31 +669,62 @@ def refined_centroids(gray_img, coordinates, WINDOW=3, LARGE=5, percent=0.2):
 
     return final
 
-# Funzione per leggere il CSV nel formato AAA0 x1,y1 x2,y2 ... con filtro
-def read_custom_csv(csv_path, suffix_char=None):
-    data_dict = {}
-    if not os.path.exists(csv_path):
-        print(f"File {csv_path} does not exist.")
-        return data_dict
-    with open(csv_path, "r") as f:
-        lines = f.readlines()
 
-    for line in lines:
-        line = line.strip()
-        if not line:
-            continue
+########################################
+# ERRORS METRICS FUNCTIONS
+########################################
 
-        parts = line.split()
-        img_name = parts[0]
+def match_centroids(ground_truth, detected, threshold=30.0):
+    """
+    Compares the computed centroids with the ground truth centroids.
 
-        # Filter
-        if suffix_char is not None and not img_name.endswith(str(suffix_char)):
-            continue
+    Args:
+        ground_truth: list of tuples (x, y)
+        detected: list of tuples (x, y) computed by your algorithm
+        threshold: maximum distance (in pixels) to consider a match
 
-        coords = []
-        for pair in parts[1:]:
-            x_str, y_str = pair.split(",")
-            coords.append((float(x_str), float(y_str)))
-        data_dict[img_name] = np.array(coords)
+    Returns:
+        matches: list of tuples ((x_computed, y_computed), (x_gt, y_gt))
+        n_matched: number of correctly matched centroids
+        match_ratio: percentage of correct centroids relative to the total ground truth
+    """
+    ground_truth = np.array(ground_truth, dtype=float)
+    detected = np.array(detected, dtype=float)
 
-    return data_dict
+    matches = []
+    for c in detected:
+        distances = np.linalg.norm(ground_truth - c, axis=1)
+        min_idx = np.argmin(distances)
+        if distances[min_idx] <= threshold:
+            matches.append((tuple(c), tuple(ground_truth[min_idx])))
+
+    n_matched = len(matches)
+    match_ratio = n_matched / len(ground_truth) * 100 if len(ground_truth) > 0 else 0.0
+
+    return matches, n_matched, match_ratio
+
+
+def match_with_ground_truth(detected_array, gt_array, max_distance=3):
+    """
+    Counts how many detected stars match the ground truth.
+    """
+    if len(detected_array) == 0 or len(gt_array) == 0:
+        return 0, 0, 0
+
+    distances = cdist(detected_array, gt_array)
+    
+    # matches counting
+    matches = 0
+    matched_gt = set()
+    
+    for i in range(len(detected_array)):
+        min_dist_idx = np.argmin(distances[i])
+        if distances[i, min_dist_idx] <= max_distance:
+            matches += 1
+            matched_gt.add(min_dist_idx)
+    
+    true_positives = matches
+    false_positives = len(detected_array) - matches
+    false_negatives = len(gt_array) - len(matched_gt)
+    
+    return true_positives, false_positives, false_negatives

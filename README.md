@@ -1,41 +1,102 @@
-# Star_Detection
+# Star Detection and Centroid Localization in Noisy Systems
 
-## SARA
+This repository contains a project focused on **star detection and centroid localization** in images affected by high levels of **electrical and luminous noise**.  
+The work builds upon existing methods in the literature and aims to improve the robustness and accuracy of star tracking pipelines, with particular reference to small-satellite applications.
 
-**Task 1** *consegna 12/12*
+## Project Overview
 
-Completa Star Detection per casistiche
-* Dark current
-* Blur
-* Blur current noise
+Star trackers are critical sensors for spacecraft attitude determination. However, their performance degrades significantly in the presence of:
+- electrical (read) noise  
+- luminous and stray light noise  
+- dark current  
+- motion-induced blur and elongated star shapes  
 
-**Task 2** *consegna 20/12*
+This project combines and extends two complementary approaches from the literature:
+- star detection techniques based on image processing and statistical analysis  
+- centroid localization methods designed to improve accuracy under strong noise conditions  
 
-Scrivi algoritmo completo e calcola coordinate
-*   Parti da studio luminosità
-*   Data ogni immagine viene ritornato un vettore di coordinate (x,y) per la loro localizzazione
+The final objective is to enhance the detection and localization performance of the open-source **LOST** star tracking software.
 
-## Andreea
+## References
 
-**Task 1** *consegna 12/12*
+The project is inspired by the following works:
 
-Crea dataset
-* Riferimento a parametri elencati pipeline-options.hpp nella cartella lost/src
-  
-  Per avere una base: le immagini di prova sono state generate variando i parametri del comando:
-     ```bash
-  ./lost pipeline   --generate 1   --generate-x-resolution 1024   --generate-y-resolution 1024   --fov 30  --generate-spread-stddev 1
-  --generate-read-noise-stddev 0.05   --generate-ra 88   --generate-de 7   --generate-roll 0  --    generate-dark-current 0.0
-  --generate-blur-de 1.5 --generate-blur-ra 1.8 --generate-blur-roll 1.9  --plot-raw-input raw-input.png   --plot-input annotated-input.png 
-     ```
-  Ogni immagine creata con il rumore ha bisogno di essere accompagnata dalla quantità di stelle contenute, per fare questo potrebbe essere utile:
-  * generare due immagini con stessa posizione e orientamento di cui una pulita e una con rumore
-  * passare l'immagine pulita dal rumore nell'algoritmo e associare il numero di stelle rilevate a quella rumorosa
-  * eliminare le immagini pulite e mantenere esclusivamente quelle ruomorose e il numero di stelle in esse contenute
-  Nota: la parte di algoritmo necessaria a fare questo è già stata sviluppata e si trova nella sezione ""Analyzing the perfect image"
+- *Stars Detection and Localisation Improvement Based on Image Processing*  
+  Imène Taleb, Azzedine Rachedi, Khadra Benahmed  
 
-**Task 2** *consegna da definire*
+- *High-Precision Centroid Localization Algorithm for Star Sensor Under Strong Straylight Condition*  
+  Jindong Yuan, Junfeng Wu, Guohua Kang  
 
-Calcola centroide stelle
-* Riferimento al paper [High-Precision Centroid Localization Algorithm](https://www.mdpi.com/2072-4292/17/7/1108#)
-* Per un calcolo più accurato, potrebbe tornare utile prendere in causa un regione circostante le coordinate riportate come risultato dell'algoritmo di detezione
+
+## Methodology
+
+The pipeline implemented in this project follows these main steps:
+
+1. **Dataset generation**
+   - Synthetic star images generated using LOST
+   - Controlled simulation of noise sources
+   - Ground truth available for evaluation
+
+2. **Noise analysis**
+   - Grey-level histograms and cumulative distributions
+   - Identification of background, Gaussian read noise, and dark current
+
+3. **Image preprocessing**
+   - Background alignment
+   - Gaussian noise estimation
+   - Wavelet-based denoising
+
+4. **Star detection**
+   - Nested-window detection strategy
+   - Multi-scale analysis using different window sizes
+   - Adaptive detection based on star eccentricity to handle elongated stars
+
+5. **Performance evaluation**
+   - Precision, recall, and F1-score computed against ground truth
+   - Comparison between standard and adaptive detection strategies
+
+
+## Repository Structure
+ ```bash
+├── Star_Tracking_final.ipynb # Main notebook containing the full analysis
+├── pipeline.py # Detection and processing pipeline
+├── lost_pipeline.py # Integration with LOST framework
+├── utils.py # Utility functions
+├── dataset_creation/ # Scripts for dataset generation
+├── cover.png # Project cover image
+├── output.zip # Example outputs
+└── Star_images/ # Synthetic star image dataset
+ ```
+
+## How to Run
+
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/your-username/your-repo-name.git
+   cd your-repo-name
+   ```
+
+2. Install required dependencies:
+   ```bash
+   pip install numpy scipy matplotlib scikit-image opencv-python pywavelets gdown
+   ```
+
+3. Open the notebook:
+   ```bash
+   jupyter notebook Star_Tracking_final.ipynb
+   ```
+
+4. Run the notebook cells sequentially to reproduce the analysis and results.
+
+## Results
+
+* High precision in star detection, even under strong noise conditions
+
+* Improved robustness through multi-scale and adaptive detection
+
+* Adaptive eccentricity-based windows significantly improve detection of elongated stars
+
+The results demonstrate that combining denoising, statistical modeling, and adaptive detection strategies leads to more reliable star tracking in challenging environments.
+
+## Authors
+Project developed as part of an academic study on star tracking and image processing by Sara Francavilla and Andreea Pollastri.

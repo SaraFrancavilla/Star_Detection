@@ -55,25 +55,12 @@ The pipeline implemented in this project follows these main steps:
    - Precision, recall, and F1-score computed against ground truth
    - Comparison between standard and adaptive detection strategies
 
-
-## Repository Structure
- ```bash
-├── Star_Tracking_final.ipynb # Main notebook containing the full analysis
-├── pipeline.py # Detection and processing pipeline
-├── lost_pipeline.py # Integration with LOST framework
-├── utils.py # Utility functions
-├── dataset_creation/ # Scripts for dataset generation
-├── cover.png # Project cover image
-├── output.zip # Example outputs
-└── Star_images/ # Synthetic star image dataset
- ```
-
 ## How to Run
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/your-username/your-repo-name.git
-   cd your-repo-name
+   git clone https://github.com/SaraFrancavilla/Star_Detection.git
+   cd Star_Detection
    ```
 
 2. Install required dependencies:
